@@ -18,7 +18,7 @@ class SimpleModelEvaluator:
         ]
     
     def evaluate_models(self, classifiers, X_test, y_test):
-        """Evaluate models with proper multi-label metrics including robust ROC-AUC"""
+        """Evaluate models with proper multi-label metrics on balanced data"""
         results = {}
         
         try:
@@ -103,7 +103,7 @@ class SimpleModelEvaluator:
             return 0.5  # Return neutral performance as fallback
     
     def _evaluate_single_model(self, model, X_test, y_test, model_name, pca=None):
-        """Evaluate model with robust multi-label metrics including safe ROC-AUC"""
+        """Evaluate model with robust multi-label metrics on balanced test data"""
         try:
             # Apply PCA if needed (for Naive Bayes)
             X_test_processed = X_test
@@ -172,8 +172,11 @@ class SimpleModelEvaluator:
             roc_auc_weighted = self._safe_roc_auc_calculation(y_test, y_pred_proba, average='weighted')
             metrics['roc_auc_weighted'] = roc_auc_weighted
             
-            # 6. Per-emotion performance (includes per-emotion ROC-AUC)
+            # 6. Per-emotion performance (balanced data analysis)
             emotion_performance = {}
+            emotion_f1_scores = []
+            emotion_balanced_scores = []
+            
             for i, emotion in enumerate(self.emotion_labels):
                 if i < y_test.shape[1]:
                     y_true_emotion = y_test[:, i]
@@ -202,6 +205,13 @@ class SimpleModelEvaluator:
                             'roc_auc': float(emotion_roc_auc),
                             'support': int(np.sum(y_true_emotion))
                         }
+                        
+                        emotion_f1_scores.append(emotion_f1)
+                        
+                        # For balanced data, check if performance is consistent
+                        if emotion_f1 > 0.4:  # Good performance threshold
+                            emotion_balanced_scores.append(emotion_f1)
+                        
                     else:
                         # Single class emotion - add with neutral metrics
                         emotion_performance[emotion] = {
@@ -215,27 +225,36 @@ class SimpleModelEvaluator:
             
             metrics['emotion_performance'] = emotion_performance
             
-            # 7. Balance improvement assessment (check if oversampling worked)
-            rare_emotion_f1_scores = []
-            for emotion, perf in emotion_performance.items():
-                if perf['support'] > 0 and perf['support'] < 2000:  # Previously rare emotions
-                    rare_emotion_f1_scores.append(perf['f1'])
-            
-            if rare_emotion_f1_scores:
-                avg_rare_f1 = np.mean(rare_emotion_f1_scores)
-                metrics['rare_emotion_avg_f1'] = float(avg_rare_f1)
+            # 7. Balanced data performance assessment
+            if emotion_f1_scores:
+                avg_emotion_f1 = np.mean(emotion_f1_scores)
+                std_emotion_f1 = np.std(emotion_f1_scores)
+                metrics['avg_emotion_f1'] = float(avg_emotion_f1)
+                metrics['std_emotion_f1'] = float(std_emotion_f1)
                 
-                if avg_rare_f1 > 0.3:
-                    metrics['oversampling_success'] = "Excellent - Rare emotions performing well"
-                elif avg_rare_f1 > 0.2:
-                    metrics['oversampling_success'] = "Good - Significant improvement for rare emotions"
-                elif avg_rare_f1 > 0.1:
-                    metrics['oversampling_success'] = "Moderate - Some improvement for rare emotions"
+                # Check consistency (balanced data should have low std deviation)
+                if std_emotion_f1 < 0.15:
+                    metrics['balance_assessment'] = "Excellent - Very consistent performance across emotions"
+                elif std_emotion_f1 < 0.25:
+                    metrics['balance_assessment'] = "Good - Reasonably consistent performance"
+                elif std_emotion_f1 < 0.35:
+                    metrics['balance_assessment'] = "Fair - Some variation in emotion performance"
                 else:
-                    metrics['oversampling_success'] = "Poor - Rare emotions still struggling"
-            else:
-                metrics['rare_emotion_avg_f1'] = 0.0
-                metrics['oversampling_success'] = "No rare emotions to assess"
+                    metrics['balance_assessment'] = "Poor - High variation despite balanced training"
+                
+                # Count well-performing emotions
+                good_emotions = sum(1 for f1 in emotion_f1_scores if f1 > 0.4)
+                total_emotions = len(emotion_f1_scores)
+                metrics['good_emotion_ratio'] = float(good_emotions / max(total_emotions, 1))
+                
+                if good_emotions / total_emotions > 0.8:
+                    metrics['consistency_success'] = "Excellent - Most emotions performing well"
+                elif good_emotions / total_emotions > 0.6:
+                    metrics['consistency_success'] = "Good - Majority of emotions performing well"
+                elif good_emotions / total_emotions > 0.4:
+                    metrics['consistency_success'] = "Fair - Some emotions performing well"
+                else:
+                    metrics['consistency_success'] = "Poor - Few emotions performing well"
             
             # 8. Confidence metrics
             if y_pred_proba.size > 0:
@@ -246,23 +265,23 @@ class SimpleModelEvaluator:
                 high_confidence = np.mean(np.max(y_pred_proba, axis=1) > 0.7)
                 metrics['high_confidence_ratio'] = float(high_confidence)
             
-            # 9. Performance quality assessment
-            quality_score = self._assess_performance_quality(metrics)
+            # 9. Performance quality assessment for balanced data
+            quality_score = self._assess_balanced_performance_quality(metrics)
             metrics['quality_assessment'] = quality_score
             
-            # Show key metrics including oversampling effectiveness
-            st.info(f"{model_name} evaluation completed successfully")
+            # Show key metrics including balanced data effectiveness
+            st.info(f"{model_name} evaluation completed on balanced test data")
             
-            # Show oversampling effectiveness
-            if 'oversampling_success' in metrics:
-                if "Excellent" in metrics['oversampling_success']:
-                    st.success(f"**Oversampling Impact**: {metrics['oversampling_success']}")
-                elif "Good" in metrics['oversampling_success']:
-                    st.success(f"**Oversampling Impact**: {metrics['oversampling_success']}")
-                elif "Moderate" in metrics['oversampling_success']:
-                    st.warning(f"**Oversampling Impact**: {metrics['oversampling_success']}")
+            # Show balanced data effectiveness
+            if 'balance_assessment' in metrics:
+                if "Excellent" in metrics['balance_assessment']:
+                    st.success(f"**Balanced Data Impact**: {metrics['balance_assessment']}")
+                elif "Good" in metrics['balance_assessment']:
+                    st.success(f"**Balanced Data Impact**: {metrics['balance_assessment']}")
+                elif "Fair" in metrics['balance_assessment']:
+                    st.warning(f"**Balanced Data Impact**: {metrics['balance_assessment']}")
                 else:
-                    st.error(f"**Oversampling Impact**: {metrics['oversampling_success']}")
+                    st.error(f"**Balanced Data Impact**: {metrics['balance_assessment']}")
             
             return metrics
             
@@ -271,15 +290,15 @@ class SimpleModelEvaluator:
             st.exception(e)
             return None
     
-    def _assess_performance_quality(self, metrics):
-        """Assess overall model performance quality including oversampling effectiveness"""
+    def _assess_balanced_performance_quality(self, metrics):
+        """Assess overall model performance quality on balanced data"""
         hamming_acc = metrics.get('hamming_accuracy', 0)
         roc_auc = metrics.get('roc_auc', 0.5)
         f1_score = metrics.get('macro_f1', 0)
-        rare_f1 = metrics.get('rare_emotion_avg_f1', 0)
+        consistency = 1 - metrics.get('std_emotion_f1', 1)  # Lower std = higher consistency
         
-        # Weighted score (hamming accuracy is most important, rare emotion F1 shows oversampling success)
-        quality_score = (hamming_acc * 0.3) + (roc_auc * 0.25) + (f1_score * 0.25) + (rare_f1 * 0.2)
+        # Weighted score emphasizing consistency for balanced data
+        quality_score = (hamming_acc * 0.3) + (roc_auc * 0.25) + (f1_score * 0.25) + (consistency * 0.2)
         
         if quality_score >= 0.8:
             return "Excellent"
@@ -291,26 +310,27 @@ class SimpleModelEvaluator:
             return "Poor"
     
     def _show_detailed_comparison(self, results, y_test):
-        """Show detailed model comparison with correct metrics including oversampling effectiveness"""
-        st.subheader("Model Performance Comparison")
+        """Show detailed model comparison with balanced data metrics"""
+        st.subheader("Model Performance Comparison (Balanced Test Data)")
         
-        # Overall Performance Summary with ROC-AUC and Oversampling Assessment
-        st.write("**Complete Multi-Label Performance Metrics with Oversampling Assessment:**")
+        # Overall Performance Summary with consistency metrics
+        st.write("**Complete Multi-Label Performance Metrics on Balanced Data:**")
         comparison_data = []
         
         for model_name, metrics in results.items():
             model_display_name = model_name.replace('_', ' ').title()
             
-            # Use correct metrics including ROC-AUC and oversampling effectiveness
+            # Use metrics relevant for balanced data
             subset_accuracy = metrics.get('subset_accuracy', 0) * 100
             hamming_accuracy = metrics.get('hamming_accuracy', 0) * 100
             macro_f1 = metrics.get('macro_f1', 0) * 100
             macro_precision = metrics.get('macro_precision', 0) * 100
             macro_recall = metrics.get('macro_recall', 0) * 100
             roc_auc = metrics.get('roc_auc', 0) * 100
-            rare_f1 = metrics.get('rare_emotion_avg_f1', 0) * 100
+            avg_emotion_f1 = metrics.get('avg_emotion_f1', 0) * 100
+            std_emotion_f1 = metrics.get('std_emotion_f1', 0) * 100
             quality = metrics.get('quality_assessment', 'Unknown')
-            oversampling_status = metrics.get('oversampling_success', 'Unknown')
+            balance_status = metrics.get('balance_assessment', 'Unknown')
             
             comparison_data.append({
                 'Model': model_display_name,
@@ -319,23 +339,24 @@ class SimpleModelEvaluator:
                 'Recall': f"{macro_recall:.1f}%",
                 'F-Measure': f"{macro_f1:.1f}%",
                 'ROC-AUC': f"{roc_auc:.1f}%",
-                'Rare Emotion F1': f"{rare_f1:.1f}%",
+                'Avg Emotion F1': f"{avg_emotion_f1:.1f}%",
+                'F1 Std Dev': f"{std_emotion_f1:.1f}%",
                 'Subset Accuracy': f"{subset_accuracy:.1f}%",
                 'Quality': quality,
-                'Oversampling Success': oversampling_status
+                'Consistency': balance_status.split(' - ')[0]
             })
         
         comparison_df = pd.DataFrame(comparison_data)
         st.dataframe(comparison_df, use_container_width=True, hide_index=True)
         
-        # Highlight best performing model and oversampling effectiveness
+        # Highlight best performing model and consistency
         if len(comparison_data) > 1:
             best_hamming = max(comparison_data, key=lambda x: float(x['Hamming Accuracy'].rstrip('%')))
             best_roc = max(comparison_data, key=lambda x: float(x['ROC-AUC'].rstrip('%')))
             best_f1 = max(comparison_data, key=lambda x: float(x['F-Measure'].rstrip('%')))
-            best_rare_f1 = max(comparison_data, key=lambda x: float(x['Rare Emotion F1'].rstrip('%')))
+            most_consistent = min(comparison_data, key=lambda x: float(x['F1 Std Dev'].rstrip('%')))
             
-            st.write("**Best Performance:**")
+            st.write("**Best Performance on Balanced Data:**")
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Best Hamming Accuracy", f"{best_hamming['Model']}", 
@@ -347,33 +368,34 @@ class SimpleModelEvaluator:
                 st.metric("Best F-Measure", f"{best_f1['Model']}", 
                          delta=f"{best_f1['F-Measure']}")
             with col4:
-                st.metric("Best Rare Emotion F1", f"{best_rare_f1['Model']}", 
-                         delta=f"{best_rare_f1['Rare Emotion F1']}")
+                st.metric("Most Consistent", f"{most_consistent['Model']}", 
+                         delta=f"±{most_consistent['F1 Std Dev']}")
         
-        # Show oversampling effectiveness summary
-        st.write("**Oversampling Effectiveness Summary:**")
+        # Show balanced data effectiveness summary
+        st.write("**Balanced Data Effectiveness Summary:**")
         for model_name, metrics in results.items():
             model_display = model_name.replace('_', ' ').title()
-            rare_f1 = metrics.get('rare_emotion_avg_f1', 0) * 100
-            oversampling_status = metrics.get('oversampling_success', 'Unknown')
+            avg_f1 = metrics.get('avg_emotion_f1', 0) * 100
+            std_f1 = metrics.get('std_emotion_f1', 0) * 100
+            balance_status = metrics.get('balance_assessment', 'Unknown')
             
-            if "Excellent" in oversampling_status:
-                st.success(f"**{model_display}**: {oversampling_status} (Rare F1: {rare_f1:.1f}%)")
-            elif "Good" in oversampling_status:
-                st.success(f"**{model_display}**: {oversampling_status} (Rare F1: {rare_f1:.1f}%)")
-            elif "Moderate" in oversampling_status:
-                st.warning(f"**{model_display}**: {oversampling_status} (Rare F1: {rare_f1:.1f}%)")
+            if "Excellent" in balance_status:
+                st.success(f"**{model_display}**: {balance_status} (Avg F1: {avg_f1:.1f}%, Std: ±{std_f1:.1f}%)")
+            elif "Good" in balance_status:
+                st.success(f"**{model_display}**: {balance_status} (Avg F1: {avg_f1:.1f}%, Std: ±{std_f1:.1f}%)")
+            elif "Fair" in balance_status:
+                st.warning(f"**{model_display}**: {balance_status} (Avg F1: {avg_f1:.1f}%, Std: ±{std_f1:.1f}%)")
             else:
-                st.info(f"**{model_display}**: {oversampling_status} (Rare F1: {rare_f1:.1f}%)")
+                st.info(f"**{model_display}**: {balance_status} (Avg F1: {avg_f1:.1f}%, Std: ±{std_f1:.1f}%)")
         
-        # Enhanced explanation of metrics including oversampling
-        with st.expander("Understanding All Metrics and Oversampling Impact"):
+        # Enhanced explanation of metrics for balanced data
+        with st.expander("Understanding Metrics on Balanced Data"):
             st.write("""
-            **Primary Performance Metrics:**
+            **Primary Performance Metrics for Balanced Data:**
             
             **Hamming Accuracy**: Average accuracy across all emotion labels (Main metric)
             - More forgiving - measures per-emotion accuracy
-            - Expected: 60-80%+ for good performance
+            - Expected: 65-85%+ for balanced data
             
             **Precision**: How many predicted positive emotions were actually correct
             - High precision = few false positives
@@ -383,55 +405,46 @@ class SimpleModelEvaluator:
             
             **F-Measure (F1-Score)**: Harmonic mean of precision and recall
             - Balances precision and recall
-            - Expected: 40-60% for emotion detection
+            - Expected: 50-70%+ with balanced data
             
             **ROC-AUC**: Area Under the Receiver Operating Characteristic curve
             - Measures ability to distinguish between classes
             - Range: 0.5 (random) to 1.0 (perfect)
-            - Expected: 70-90% for good models
+            - Expected: 75-90%+ with balanced training
             
-            **Oversampling Impact Assessment:**
+            **Balanced Data Specific Metrics:**
             
-            **Rare Emotion F1**: Average F1-score for emotions that had <2,000 samples originally
-            - This metric shows if our aggressive oversampling worked!
-            - >30% = Excellent oversampling success
-            - 20-30% = Good improvement from oversampling
-            - 10-20% = Moderate improvement
-            - <10% = Oversampling didn't help much
+            **Average Emotion F1**: Mean F1-score across all emotions
+            - Shows overall emotion detection capability
+            - Expected: 50-70%+ with balanced sampling
             
-            **Oversampling Success**: Overall assessment of how well the balancing worked
-            - Shows if the 5-10x boosting of rare emotions improved their detection
+            **F1 Standard Deviation**: Consistency of performance across emotions
+            - Lower values = more consistent performance
+            - <15% = Excellent consistency
+            - 15-25% = Good consistency
+            - >25% = Poor consistency (balanced data should prevent this)
+            
+            **Consistency Assessment**: Overall assessment of performance uniformity
+            - Shows if balanced sampling achieved its goal of equal attention to all emotions
             
             **Why This Matters:**
-            Without proper balancing, rare emotions like "grief", "pride", "nervousness" would have 
-            near-zero F1 scores. Our aggressive oversampling should boost these to 20-40%+ F1 scores.
+            Balanced sampling should eliminate the "rare emotion problem" and give consistent 
+            performance across all 27 emotions. The consistency metrics show if this worked.
             """)
         
-        # Show which metrics to focus on
-        st.success("Model evaluation completed with oversampling effectiveness assessment!")
+        # Show which metrics to focus on for balanced data
+        st.success("Model evaluation completed on perfectly balanced test data!")
     
     def create_roc_curves(self, classifiers, X_test, y_test):
-        """Create ROC-AUC visualization for top emotions including rare emotions"""
+        """Create ROC-AUC visualization for diverse emotions from balanced data"""
         try:
-            # Select top 4 frequent emotions + top 2 rare emotions for visualization
-            emotion_counts = {}
-            for i, emotion in enumerate(self.emotion_labels):
-                if i < y_test.shape[1]:
-                    emotion_counts[emotion] = np.sum(y_test[:, i])
-            
-            # Get top frequent emotions
-            frequent_emotions = sorted(emotion_counts.items(), key=lambda x: x[1], reverse=True)[:4]
-            # Get rare emotions (that we boosted)
-            rare_emotions = sorted([(e, c) for e, c in emotion_counts.items() if c < 2000 and c > 100], 
-                                 key=lambda x: x[1], reverse=True)[:2]
-            
-            # Combine for visualization
-            selected_emotions = [emotion for emotion, _ in frequent_emotions + rare_emotions]
+            # Select 6 emotions representing different categories for visualization
+            selected_emotions = ['joy', 'anger', 'sadness', 'fear', 'surprise', 'neutral']
             
             # Create subplots
             fig = make_subplots(
                 rows=2, cols=3,
-                subplot_titles=selected_emotions,
+                subplot_titles=[emotion.title() for emotion in selected_emotions],
                 specs=[[{"secondary_y": False}]*3]*2
             )
             
@@ -441,15 +454,15 @@ class SimpleModelEvaluator:
                 row = (idx // 3) + 1
                 col = (idx % 3) + 1
                 
+                if emotion not in self.emotion_labels:
+                    continue
+                    
                 emotion_idx = self.emotion_labels.index(emotion)
                 y_true = y_test[:, emotion_idx]
                 
                 # Skip if only one class
                 if len(np.unique(y_true)) < 2:
                     continue
-                
-                # Determine if this is a rare emotion (previously boosted)
-                is_rare = emotion_counts[emotion] < 2000
                 
                 # Get predictions from both models
                 models_data = []
@@ -477,17 +490,14 @@ class SimpleModelEvaluator:
                         fpr, tpr, _ = roc_curve(y_true, proba)
                         auc_score = roc_auc_score(y_true, proba)
                         
-                        # Add special marking for rare emotions
                         display_name = f'{model_name} (AUC={auc_score:.3f})'
-                        if is_rare:
-                            display_name += ' [RARE]'
                         
                         fig.add_trace(
                             go.Scatter(
                                 x=fpr, y=tpr,
                                 mode='lines',
                                 name=display_name,
-                                line=dict(color=color, width=3 if is_rare else 2, dash='dot' if is_rare else 'solid'),
+                                line=dict(color=color, width=2),
                                 showlegend=(idx == 0)  # Only show legend for first subplot
                             ),
                             row=row, col=col
@@ -505,24 +515,10 @@ class SimpleModelEvaluator:
                     ),
                     row=row, col=col
                 )
-                
-                # Add annotation for rare emotions
-                if is_rare:
-                    fig.add_annotation(
-                        text="RARE EMOTION<br>(Oversampled)",
-                        x=0.7, y=0.3,
-                        xref=f"x{'' if row == 1 and col == 1 else row*3 + col - 3}",
-                        yref=f"y{'' if row == 1 and col == 1 else row*3 + col - 3}",
-                        showarrow=False,
-                        font=dict(size=10, color="orange"),
-                        bgcolor="rgba(255,165,0,0.3)",
-                        bordercolor="orange",
-                        borderwidth=1
-                    )
             
             # Update layout
             fig.update_layout(
-                title="ROC-AUC Curves: Top Frequent + Oversampled Rare Emotions",
+                title="ROC-AUC Curves: Representative Emotions from Balanced Data",
                 height=600,
                 template="plotly_dark",
                 paper_bgcolor="rgba(0,0,0,0)",
@@ -542,112 +538,9 @@ class SimpleModelEvaluator:
             st.error(f"Error creating ROC curves: {str(e)}")
             return None
     
-    def create_emotion_trajectory(self, results_df):
-        """Create emotion trajectory visualization over time"""
-        try:
-            if 'trajectory_index' not in results_df.columns:
-                results_df['trajectory_index'] = range(len(results_df))
-            
-            # Get emotion counts over trajectory
-            window_size = max(10, len(results_df) // 20)  # Adaptive window size
-            
-            # Create rolling emotion counts
-            emotion_trajectory = {}
-            unique_emotions = results_df['top_emotion'].unique()
-            
-            for emotion in unique_emotions:
-                emotion_mask = results_df['top_emotion'] == emotion
-                emotion_trajectory[emotion] = emotion_mask.rolling(window=window_size, center=True).sum()
-            
-            # Create the plot
-            fig = go.Figure()
-            
-            colors = px.colors.qualitative.Set3
-            for i, (emotion, trajectory) in enumerate(emotion_trajectory.items()):
-                fig.add_trace(go.Scatter(
-                    x=results_df['trajectory_index'],
-                    y=trajectory,
-                    mode='lines',
-                    name=emotion.title(),
-                    line=dict(color=colors[i % len(colors)], width=2)
-                ))
-            
-            fig.update_layout(
-                title=f"Emotion Trajectory Over Time (Window Size: {window_size})",
-                xaxis_title="Sample Index",
-                yaxis_title="Emotion Frequency (Rolling Sum)",
-                template="plotly_dark",
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                height=500
-            )
-            
-            return fig
-            
-        except Exception as e:
-            st.error(f"Error creating emotion trajectory: {str(e)}")
-            return None
-    
-    def create_emotion_comparison(self, results_a, results_b, label_a, label_b):
-        """Create emotion comparison chart between two texts"""
-        try:
-            # Get all emotions and their probabilities
-            emotions_a = {emotion: prob for emotion, prob in zip(results_a['top_3_emotions'], results_a['top_3_probabilities'])}
-            emotions_b = {emotion: prob for emotion, prob in zip(results_b['top_3_emotions'], results_b['top_3_probabilities'])}
-            
-            # Get union of all emotions
-            all_emotions = set(emotions_a.keys()) | set(emotions_b.keys())
-            
-            # Create comparison data
-            comparison_data = []
-            for emotion in all_emotions:
-                prob_a = emotions_a.get(emotion, 0)
-                prob_b = emotions_b.get(emotion, 0)
-                comparison_data.append({
-                    'Emotion': emotion.title(),
-                    label_a: prob_a * 100,
-                    label_b: prob_b * 100
-                })
-            
-            comparison_df = pd.DataFrame(comparison_data)
-            
-            # Create grouped bar chart
-            fig = go.Figure()
-            
-            fig.add_trace(go.Bar(
-                name=label_a,
-                x=comparison_df['Emotion'],
-                y=comparison_df[label_a],
-                marker_color='#FF6B6B'
-            ))
-            
-            fig.add_trace(go.Bar(
-                name=label_b,
-                x=comparison_df['Emotion'],
-                y=comparison_df[label_b],
-                marker_color='#4ECDC4'
-            ))
-            
-            fig.update_layout(
-                title=f"Emotion Comparison: {label_a} vs {label_b}",
-                xaxis_title="Emotions",
-                yaxis_title="Confidence (%)",
-                barmode='group',
-                template="plotly_dark",
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                height=500
-            )
-            
-            return fig
-            
-        except Exception as e:
-            st.error(f"Error creating emotion comparison: {str(e)}")
-            return None
-    
     def display_performance_summary(self, results):
-        """Display performance summary with all required metrics and oversampling assessment"""
-        st.subheader("Performance Summary - All Required Metrics + Oversampling Impact")
+        """Display performance summary with balanced data metrics"""
+        st.subheader("Performance Summary - Balanced Data Results")
         
         if not results:
             st.error("No results to display")
@@ -656,15 +549,16 @@ class SimpleModelEvaluator:
         summary_data = []
         
         for model_name, metrics in results.items():
-            # Use all required metrics plus oversampling assessment
+            # Use metrics appropriate for balanced data evaluation
             hamming_accuracy = metrics.get('hamming_accuracy', 0) * 100
             macro_precision = metrics.get('macro_precision', 0) * 100
             macro_recall = metrics.get('macro_recall', 0) * 100
             macro_f1 = metrics.get('macro_f1', 0) * 100
             roc_auc = metrics.get('roc_auc', 0) * 100
-            rare_f1 = metrics.get('rare_emotion_avg_f1', 0) * 100
+            avg_emotion_f1 = metrics.get('avg_emotion_f1', 0) * 100
+            std_emotion_f1 = metrics.get('std_emotion_f1', 0) * 100
             quality = metrics.get('quality_assessment', 'Unknown')
-            oversampling_success = metrics.get('oversampling_success', 'Unknown')
+            consistency = metrics.get('balance_assessment', 'Unknown').split(' - ')[0]
             
             summary_data.append({
                 'Model': model_name.replace('_', ' ').title(),
@@ -673,46 +567,47 @@ class SimpleModelEvaluator:
                 'Recall': f"{macro_recall:.1f}%",
                 'F-Measure': f"{macro_f1:.1f}%",
                 'ROC-AUC': f"{roc_auc:.1f}%",
-                'Rare Emotion F1': f"{rare_f1:.1f}%",
+                'Avg Emotion F1': f"{avg_emotion_f1:.1f}%",
+                'F1 Consistency': f"±{std_emotion_f1:.1f}%",
                 'Quality': quality,
-                'Oversampling Impact': oversampling_success.split(' - ')[0]  # First part only
+                'Balance Success': consistency
             })
         
         # Display as table
         summary_df = pd.DataFrame(summary_data)
         st.dataframe(summary_df, use_container_width=True, hide_index=True)
         
-        # Show best model and oversampling effectiveness
+        # Show best model and consistency analysis
         if len(summary_data) > 1:
             best_model = max(summary_data, key=lambda x: float(x['Accuracy'].rstrip('%')))
-            best_rare_f1 = max(summary_data, key=lambda x: float(x['Rare Emotion F1'].rstrip('%')))
+            most_consistent = min(summary_data, key=lambda x: float(x['F1 Consistency'].rstrip('±%')))
             
             col1, col2 = st.columns(2)
             with col1:
                 st.success(f"**Best Overall Model**: {best_model['Model']} ({best_model['Accuracy']} accuracy)")
             with col2:
-                st.success(f"**Best Rare Emotion Performance**: {best_rare_f1['Model']} ({best_rare_f1['Rare Emotion F1']} rare F1)")
+                st.success(f"**Most Consistent**: {most_consistent['Model']} ({most_consistent['F1 Consistency']} variation)")
         
-        # Show oversampling effectiveness summary
-        st.write("**Oversampling Effectiveness:**")
+        # Show balanced sampling effectiveness summary
+        st.write("**Balanced Sampling Effectiveness:**")
         for data in summary_data:
-            rare_f1_val = float(data['Rare Emotion F1'].rstrip('%'))
-            if rare_f1_val > 30:
-                st.success(f"✓ **{data['Model']}**: Excellent rare emotion improvement ({data['Rare Emotion F1']})")
-            elif rare_f1_val > 20:
-                st.success(f"✓ **{data['Model']}**: Good rare emotion improvement ({data['Rare Emotion F1']})")
-            elif rare_f1_val > 10:
-                st.warning(f"⚠ **{data['Model']}**: Moderate rare emotion improvement ({data['Rare Emotion F1']})")
+            consistency_val = float(data['F1 Consistency'].rstrip('±%'))
+            if consistency_val < 15:
+                st.success(f"✓ **{data['Model']}**: Excellent consistency ({data['F1 Consistency']} variation)")
+            elif consistency_val < 25:
+                st.success(f"✓ **{data['Model']}**: Good consistency ({data['F1 Consistency']} variation)")
+            elif consistency_val < 35:
+                st.warning(f"⚠ **{data['Model']}**: Fair consistency ({data['F1 Consistency']} variation)")
             else:
-                st.error(f"✗ **{data['Model']}**: Poor rare emotion improvement ({data['Rare Emotion F1']})")
+                st.error(f"✗ **{data['Model']}**: Poor consistency ({data['F1 Consistency']} variation)")
         
         return summary_data
     
     def explain_metrics(self):
-        """Explain key metrics including oversampling impact"""
-        with st.expander("Understanding Performance Metrics + Oversampling Impact"):
+        """Explain key metrics for balanced data evaluation"""
+        with st.expander("Understanding Balanced Data Performance Metrics"):
             st.write("""
-            **Key Performance Metrics:**
+            **Key Performance Metrics for Balanced Data:**
             
             **Precision**: Accuracy of positive predictions
             - How many predicted emotions were actually correct
@@ -730,48 +625,54 @@ class SimpleModelEvaluator:
             **Hamming Accuracy**: Average accuracy across all emotion labels
             - More appropriate for multi-label classification
             
-            **OVERSAMPLING IMPACT METRICS:**
+            **BALANCED DATA SPECIFIC METRICS:**
             
-            **Rare Emotion F1**: Shows if our 5-10x oversampling worked!
-            - Measures F1-score specifically for emotions that were originally rare (<2,000 samples)
-            - Before oversampling: These would be ~1-5% F1
-            - After aggressive oversampling: Should be 20-40%+ F1
-            - This metric directly shows the success of our balancing strategy
+            **Average Emotion F1**: Shows overall emotion detection capability
+            - With balanced data, this should be high and consistent
+            - Target: 50-70%+ for good balanced performance
+            
+            **F1 Consistency (Standard Deviation)**: Shows performance uniformity
+            - Lower values = more consistent performance across emotions
+            - <15% = Excellent (balanced sampling worked perfectly)
+            - 15-25% = Good (balanced sampling mostly worked)
+            - >25% = Poor (balanced sampling didn't achieve consistency)
+            
+            **Balance Success**: Overall assessment of sampling effectiveness
+            - Shows if balanced sampling achieved equal attention to all emotions
             
             **Why This Matters:**
-            Our aggressive oversampling specifically targeted emotions like "grief", "pride", 
-            "nervousness" that had <1,500 samples. Without this, they would have terrible F1-scores.
-            The "Rare Emotion F1" metric shows if our 5-10x boosting strategy worked!
+            Balanced sampling should eliminate performance disparities between emotions.
+            The consistency metrics show if our equal sampling strategy worked!
             """)
     
     def get_model_recommendations(self, results):
-        """Provide recommendations based on metrics including oversampling effectiveness"""
+        """Provide recommendations based on balanced data performance"""
         recommendations = []
         
         if len(results) > 1:
             # Compare models
             best_acc = max(results.items(), key=lambda x: x[1].get('hamming_accuracy', 0))
             best_auc = max(results.items(), key=lambda x: x[1].get('roc_auc', 0))
-            best_rare = max(results.items(), key=lambda x: x[1].get('rare_emotion_avg_f1', 0))
+            most_consistent = min(results.items(), key=lambda x: x[1].get('std_emotion_f1', 1))
             
-            recommendations.append("**Model Performance Summary:**")
+            recommendations.append("**Model Performance Summary on Balanced Data:**")
             recommendations.append(f"• Best Overall Accuracy: {best_acc[0].replace('_', ' ').title()}")
             recommendations.append(f"• Best ROC-AUC: {best_auc[0].replace('_', ' ').title()}")
-            recommendations.append(f"• Best Rare Emotion Performance: {best_rare[0].replace('_', ' ').title()}")
+            recommendations.append(f"• Most Consistent Performance: {most_consistent[0].replace('_', ' ').title()}")
             
-            # Assess oversampling success
+            # Assess balanced sampling success
             recommendations.append("")
-            recommendations.append("**Oversampling Effectiveness:**")
+            recommendations.append("**Balanced Sampling Effectiveness:**")
             for model_name, metrics in results.items():
-                rare_f1 = metrics.get('rare_emotion_avg_f1', 0) * 100
-                if rare_f1 > 25:
-                    recommendations.append(f"• {model_name.replace('_', ' ').title()}: Excellent rare emotion improvement ({rare_f1:.1f}% F1)")
-                elif rare_f1 > 15:
-                    recommendations.append(f"• {model_name.replace('_', ' ').title()}: Good rare emotion improvement ({rare_f1:.1f}% F1)")
+                std_f1 = metrics.get('std_emotion_f1', 1) * 100
+                if std_f1 < 15:
+                    recommendations.append(f"• {model_name.replace('_', ' ').title()}: Excellent consistency (±{std_f1:.1f}% F1 variation)")
+                elif std_f1 < 25:
+                    recommendations.append(f"• {model_name.replace('_', ' ').title()}: Good consistency (±{std_f1:.1f}% F1 variation)")
                 else:
-                    recommendations.append(f"• {model_name.replace('_', ' ').title()}: Moderate rare emotion improvement ({rare_f1:.1f}% F1)")
+                    recommendations.append(f"• {model_name.replace('_', ' ').title()}: Needs improvement (±{std_f1:.1f}% F1 variation)")
             
         else:
-            recommendations.append("**Model evaluation completed successfully with oversampling assessment.**")
+            recommendations.append("**Model evaluation completed successfully on balanced data.**")
         
         return recommendations
