@@ -34,7 +34,7 @@ TEAM_NAMES = [
 ]
 # Optional: put your logo file inside an 'assets' folder at project root
 # e.g., assets/logo.png (transparent works best). Leave empty to hide.
-LOGO_PATH = "C:/Users/akuaz/PycharmProjects/PythonProject1/Logo_emotion_detection.png"
+LOGO_PATH = "Logo_emotion_detection.png"
 
 # Quick stats
 if hasattr(st.session_state, 'df'):
@@ -64,99 +64,156 @@ def inject_css(acc1, acc2, acc3):
     st.markdown(
         f"""
         <style>
+            /* Enhanced dark background with simple gradient */
             .stApp {{
-                background: radial-gradient(1200px 800px at 10% 10%, #0d1321 0%, #0a0f1c 30%, #070b14 55%, #05080f 100%) !important;
+                background: linear-gradient(180deg, #0d1321 0%, #0a0f1c 50%, #070b14 100%) !important;
             }}
+            
+            /* Simplified glass effect - remove backdrop-filter */
             .glass {{
-                background: rgba(255,255,255,0.04);
-                backdrop-filter: blur(8px);
-                -webkit-backdrop-filter: blur(8px);
-                border: 1px solid rgba(255,255,255,0.08);
-                border-radius: 14px;
+                background: rgba(255,255,255,0.08);
+                border: 1px solid rgba(255,255,255,0.12);
+                border-radius: 12px;
                 padding: 1rem 1.1rem;
-                box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             }}
+            
+            /* Simplified main header */
             .main-header {{
                 font-size: 2.2rem;
                 font-weight: 800;
                 letter-spacing: 0.5px;
-                background: linear-gradient(90deg, {acc1}, {acc2}, {acc3});
+                background: linear-gradient(90deg, {acc1}, {acc2});
                 -webkit-background-clip: text;
                 background-clip: text;
                 color: transparent;
                 margin: 0.2rem 0 0.2rem 0;
             }}
+            
+            /* Simple chip styling */
             .chip {{
                 display: inline-block;
                 padding: 6px 10px;
-                border-radius: 999px;
-                background: rgba(255,255,255,0.06);
-                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 20px;
+                background: rgba(255,255,255,0.1);
+                border: 1px solid rgba(255,255,255,0.15);
                 margin: 4px 6px 0 0;
                 font-size: 0.9rem;
                 color: #e5e7eb;
             }}
-            .stMarkdown h2, .stMarkdown h3 {{ color: #e5e7eb !important; }}
-            [data-testid="stMetric"] {{
-                background: rgba(255,255,255,0.04);
-                border: 1px solid rgba(255,255,255,0.08);
-                border-radius: 12px;
-                padding: 0.9rem 0.9rem;
-                box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), 0 6px 18px rgba(0,0,0,0.35);
+            
+            /* Basic text colors */
+            .stMarkdown h2, .stMarkdown h3 {{ 
+                color: #e5e7eb !important; 
             }}
-            [data-testid="stMetric"] [data-testid="stMetricDelta"] {{ color: {acc1} !important; }}
-            .stTabs [data-baseweb="tab-list"] {{ gap: 4px; }}
+            
+            /* Simplified metrics */
+            [data-testid="stMetric"] {{
+                background: rgba(255,255,255,0.08);
+                border: 1px solid rgba(255,255,255,0.15);
+                border-radius: 10px;
+                padding: 0.9rem 0.9rem;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            }}
+            
+            [data-testid="stMetric"] [data-testid="stMetricDelta"] {{ 
+                color: {acc1} !important; 
+            }}
+            
+            /* Simple tab styling */
+            .stTabs [data-baseweb="tab-list"] {{ 
+                gap: 4px; 
+            }}
+            
             .stTabs [data-baseweb="tab"] {{
-                background: rgba(255,255,255,0.04);
-                border: 1px solid rgba(255,255,255,0.08);
-                border-radius: 12px;
+                background: rgba(255,255,255,0.08);
+                border: 1px solid rgba(255,255,255,0.15);
+                border-radius: 10px;
                 padding: 10px 16px;
                 color: #d1d5db;
             }}
+            
             .stTabs [aria-selected="true"] {{
-                background: linear-gradient(135deg, {acc1}33, {acc2}33);
+                background: rgba(34, 211, 238, 0.2);
                 color: #ffffff !important;
-                border-color: {acc2}66;
-                box-shadow: 0 0 0 1px {acc1}33, 0 8px 22px rgba(0,0,0,0.35);
+                border-color: {acc1};
+                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
             }}
+            
+            /* Simplified button styling */
             .stButton > button {{
-                background: linear-gradient(135deg, {acc1} 0%, {acc2} 50%, {acc3} 100%);
+                background: linear-gradient(135deg, {acc1}, {acc2});
                 border: none;
                 color: white;
                 font-weight: 700;
                 padding: 0.6rem 1.1rem;
-                border-radius: 12px;
-                transition: transform 0.06s ease-in-out, box-shadow 0.2s ease;
-                box-shadow: 0 8px 22px {acc1}29, 0 2px 8px rgba(0,0,0,0.35);
+                border-radius: 10px;
+                transition: transform 0.1s ease, box-shadow 0.2s ease;
+                box-shadow: 0 4px 12px rgba(34, 211, 238, 0.3);
             }}
+            
             .stButton > button:hover {{
                 transform: translateY(-1px);
-                box-shadow: 0 12px 28px {acc2}38, 0 4px 12px rgba(0,0,0,0.4);
+                box-shadow: 0 6px 16px rgba(34, 211, 238, 0.4);
             }}
-            .stButton > button:active {{ transform: translateY(0px) scale(0.99); }}
+            
+            /* Simple input styling */
             .stTextInput > div > div input, textarea {{
-                background: rgba(255,255,255,0.06) !important;
-                border: 1px solid rgba(255,255,255,0.08) !important;
+                background: rgba(255,255,255,0.1) !important;
+                border: 1px solid rgba(255,255,255,0.2) !important;
                 color: #e5e7eb !important;
-                border-radius: 10px !important;
+                border-radius: 8px !important;
             }}
+            
+            /* Simple sidebar */
             section[data-testid="stSidebar"] {{
-                background: linear-gradient(180deg, rgba(17,24,39,0.95), rgba(10,15,28,0.95));
-                border-right: 1px solid rgba(255,255,255,0.06);
+                background: rgba(17,24,39,0.95);
+                border-right: 1px solid rgba(255,255,255,0.1);
             }}
+            
+            /* Simple dataframe styling */
             .stDataFrame div[role="table"] {{
-                background: rgba(255,255,255,0.02) !important;
-                border-radius: 12px !important;
-                border: 1px solid rgba(255,255,255,0.08) !important;
+                background: rgba(255,255,255,0.05) !important;
+                border-radius: 10px !important;
+                border: 1px solid rgba(255,255,255,0.15) !important;
             }}
-            .footer {{ text-align: center; color: #9ca3af; padding: 18px; }}
+            
+            /* Footer */
+            .footer {{ 
+                text-align: center; 
+                color: #9ca3af; 
+                padding: 18px; 
+            }}
+            
+            /* Simplified logo container */
             .logo-ring {{
                 position: relative;
-                width: 58px; height: 58px; border-radius: 50%;
-                box-shadow: 0 0 0 2px {acc2}55, 0 0 18px {acc3}55;
+                width: 58px; 
+                height: 58px; 
+                border-radius: 50%;
+                box-shadow: 0 0 0 2px {acc1};
                 overflow: hidden;
+                background: rgba(255,255,255,0.1);
             }}
-            .logo-ring img {{ width: 100%; height: 100%; object-fit: contain; }}
+            
+            .logo-ring img {{ 
+                width: 100%; 
+                height: 100%; 
+                object-fit: contain; 
+            }}
+            
+            /* Progress bar styling */
+            .stProgress .st-bo {{
+                background-color: {acc1};
+            }}
+            
+            /* Alert styling */
+            .stAlert {{
+                background: rgba(255,255,255,0.08);
+                border-radius: 8px;
+                border-left: 4px solid {acc1};
+            }}
+            
         </style>
         """,
         unsafe_allow_html=True,
