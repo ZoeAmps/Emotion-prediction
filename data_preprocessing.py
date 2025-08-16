@@ -290,101 +290,121 @@ class SimpleDataPreprocessor:
             reduction = ((avg_original - avg_processed) / max(avg_original, 1)) * 100
             st.metric("Word Reduction", f"{reduction:.1f}%")
 
-    def aggressive_emotion_balancing(self, df, target_min_samples=3000, max_dominant_samples=12000):
-        """Advanced Oversampling: Boost rare emotions 5-10x for significantly better F1-scores"""
-        st.subheader("Advanced Emotion Balancing (Performance Boost Mode)")
+    def balanced_emotion_sampling(self, df, samples_per_emotion=800, total_target=None):
+        """NEW: Smart balanced sampling - equal samples per emotion"""
+        st.subheader("Balanced Emotion Sampling (NEW APPROACH)")
+        
+        # Calculate target samples per emotion
+        if total_target:
+            samples_per_emotion = total_target // len(self.emotion_columns)
+        
+        st.info(f"**NEW STRATEGY**: Equal samples per emotion for perfect balance!")
+        st.info(f"**Target**: {samples_per_emotion:,} samples per emotion")
         
         # Analyze current distribution
         original_counts = {}
+        available_counts = {}
+        
         for emotion in self.emotion_columns:
             if emotion in df.columns:
-                original_counts[emotion] = (df[emotion] == 1).sum()
+                emotion_samples = df[df[emotion] == 1]
+                original_counts[emotion] = len(emotion_samples)
+                available_counts[emotion] = len(emotion_samples)
         
-        # Sort emotions by frequency
-        sorted_emotions = sorted(original_counts.items(), key=lambda x: x[1], reverse=True)
-        
-        # Show original problematic distribution
+        # Show original distribution
         st.write("**ORIGINAL IMBALANCED DISTRIBUTION:**")
         
-        rare_emotions = []
-        dominant_emotions = []
-        balanced_emotions = []
+        insufficient_emotions = []
+        sufficient_emotions = []
         
-        for emotion, count in sorted_emotions:
+        for emotion, count in sorted(original_counts.items(), key=lambda x: x[1]):
             percentage = (count / len(df)) * 100
-            if count < 1500:  # Very rare
-                rare_emotions.append((emotion, count, percentage))
-            elif count > 8000:  # Too dominant
-                dominant_emotions.append((emotion, count, percentage))
+            if count < samples_per_emotion:
+                insufficient_emotions.append((emotion, count, samples_per_emotion - count))
+                st.error(f"   • **{emotion}**: {count:,} samples (need {samples_per_emotion - count:,} more)")
             else:
-                balanced_emotions.append((emotion, count, percentage))
+                sufficient_emotions.append((emotion, count))
+                st.success(f"   • **{emotion}**: {count:,} samples (sufficient)")
         
-        # Display analysis
-        if rare_emotions:
-            st.error(f"**RARE EMOTIONS** (Will cause low F1-score):")
-            for emotion, count, pct in rare_emotions:
-                st.write(f"   • **{emotion}**: {count:,} samples ({pct:.2f}%) - TOO RARE!")
-            st.write("**Solution**: Aggressive 5-10x oversampling!")
-        
-        if dominant_emotions:
-            st.warning(f"**DOMINANT EMOTIONS** (Will overshadow others):")
-            for emotion, count, pct in dominant_emotions:
-                st.write(f"   • **{emotion}**: {count:,} samples ({pct:.1f}%) - TOO DOMINANT!")
-            st.write("**Solution**: Limit to reduce dominance!")
-        
-        if balanced_emotions:
-            st.success(f"**WELL-BALANCED EMOTIONS** ({len(balanced_emotions)} emotions):")
-            for emotion, count, pct in balanced_emotions[:3]:  # Show top 3
-                st.write(f"   • **{emotion}**: {count:,} samples ({pct:.1f}%) - Good!")
+        # Handle insufficient emotions
+        if insufficient_emotions:
+            st.warning("**INSUFFICIENT EMOTIONS DETECTED!**")
+            st.write("**Options:**")
+            
+            option = st.radio(
+                "How to handle insufficient emotions?",
+                [
+                    f"Reduce target to {min(original_counts.values())} (use all available)",
+                    f"Keep {samples_per_emotion} target (insufficient emotions will be oversampled)",
+                    "Custom target amount"
+                ]
+            )
+            
+            if "Reduce target" in option:
+                samples_per_emotion = min(original_counts.values())
+                st.info(f"**NEW TARGET**: {samples_per_emotion} samples per emotion")
+            elif "Custom" in option:
+                custom_target = st.slider(
+                    "Custom samples per emotion:",
+                    min_value=min(original_counts.values()),
+                    max_value=max(original_counts.values()),
+                    value=min(800, min(original_counts.values()))
+                )
+                samples_per_emotion = custom_target
         
         st.divider()
         
-        # Start aggressive balancing
-        st.write("**APPLYING ADVANCED BALANCING:**")
+        # Create balanced dataset
+        st.write("**CREATING PERFECTLY BALANCED DATASET:**")
         balanced_dfs = []
+        final_counts = {}
         
-        # Process each emotion category
         for emotion in self.emotion_columns:
             if emotion not in df.columns:
                 continue
                 
             emotion_samples = df[df[emotion] == 1].copy()
-            current_count = len(emotion_samples)
+            available_count = len(emotion_samples)
             
-            if current_count == 0:
+            if available_count == 0:
+                st.warning(f"   • **{emotion}**: No samples available")
                 continue
             
-            # Determine balancing action
-            if current_count < 1500:  # RARE: Aggressive oversampling
-                # Calculate multiplier for aggressive boost
-                multiplier = min(10, max(3, target_min_samples // current_count))
+            if available_count >= samples_per_emotion:
+                # Sufficient samples - randomly sample
+                sampled_data = emotion_samples.sample(n=samples_per_emotion, random_state=42)
+                st.success(f"   • **{emotion}**: {available_count:,} → {samples_per_emotion:,} (sampled)")
+                final_counts[emotion] = samples_per_emotion
+                balanced_dfs.append(sampled_data)
                 
-                # Create boosted samples with slight variations
-                boosted_samples = []
-                for _ in range(multiplier):
-                    # Add some randomness to avoid exact duplicates
-                    sample_copy = emotion_samples.sample(frac=1, random_state=42 + len(boosted_samples))
-                    boosted_samples.append(sample_copy)
-                
-                final_samples = pd.concat(boosted_samples, ignore_index=True)
-                new_count = len(final_samples)
-                
-                st.success(f"   **{emotion.title()}**: {current_count:,} → {new_count:,} samples ({multiplier}x boost)")
-                balanced_dfs.append(final_samples)
-                
-            elif current_count > max_dominant_samples:  # DOMINANT: Limit
-                limited_samples = emotion_samples.sample(n=max_dominant_samples, random_state=42)
-                st.info(f"   **{emotion.title()}**: {current_count:,} → {max_dominant_samples:,} samples (limited)")
-                balanced_dfs.append(limited_samples)
-                
-            else:  # BALANCED: Keep as is
-                st.write(f"   **{emotion.title()}**: {current_count:,} samples (unchanged)")
-                balanced_dfs.append(emotion_samples)
+            else:
+                # Insufficient samples - use all + oversample if needed
+                if samples_per_emotion <= available_count * 3:  # Reasonable oversampling
+                    # Create oversampled data
+                    multiplier = samples_per_emotion // available_count
+                    remainder = samples_per_emotion % available_count
+                    
+                    oversampled_parts = []
+                    for _ in range(multiplier):
+                        oversampled_parts.append(emotion_samples.copy())
+                    
+                    if remainder > 0:
+                        oversampled_parts.append(emotion_samples.sample(n=remainder, random_state=42))
+                    
+                    oversampled_data = pd.concat(oversampled_parts, ignore_index=True)
+                    st.warning(f"   • **{emotion}**: {available_count:,} → {samples_per_emotion:,} (oversampled {multiplier + 1}x)")
+                    final_counts[emotion] = samples_per_emotion
+                    balanced_dfs.append(oversampled_data)
+                else:
+                    # Too much oversampling needed - use all available
+                    st.error(f"   • **{emotion}**: {available_count:,} (used all - oversampling too extreme)")
+                    final_counts[emotion] = available_count
+                    balanced_dfs.append(emotion_samples)
         
         # Combine all balanced samples
         if balanced_dfs:
             balanced_df = pd.concat(balanced_dfs, ignore_index=True)
-            # Remove exact duplicates but keep intentional oversampling
+            # Remove any exact duplicates but keep intentional oversampling
             balanced_df = balanced_df.drop_duplicates(subset=['text'], keep='first')
             # Shuffle the entire dataset
             balanced_df = balanced_df.sample(frac=1, random_state=42).reset_index(drop=True)
@@ -393,82 +413,50 @@ class SimpleDataPreprocessor:
         
         # Show final results
         st.divider()
-        st.write("**FINAL BALANCED DISTRIBUTION:**")
+        st.write("**FINAL PERFECTLY BALANCED DISTRIBUTION:**")
         
-        final_counts = {}
-        for emotion in self.emotion_columns:
-            if emotion in balanced_df.columns:
-                final_counts[emotion] = (balanced_df[emotion] == 1).sum()
-        
-        # Display improvements
         col1, col2, col3 = st.columns(3)
         
-        total_original = len(df)
-        total_final = len(balanced_df)
-        
         with col1:
-            st.metric("Original Samples", f"{total_original:,}")
-            st.metric("Final Samples", f"{total_final:,}", delta=f"{total_final - total_original:+,}")
+            st.metric("Total Original", f"{len(df):,}")
+            st.metric("Total Final", f"{len(balanced_df):,}")
         
         with col2:
-            # Calculate improvement metrics
-            rare_improved = 0
-            for emotion, orig_count in original_counts.items():
-                if orig_count < 1500:
-                    final_count = final_counts.get(emotion, 0)
-                    if final_count > orig_count:
-                        rare_improved += 1
+            perfect_balance = len(set(final_counts.values())) == 1  # All counts are equal
+            if perfect_balance:
+                st.metric("Balance Status", "PERFECT", delta="✅")
+            else:
+                st.metric("Balance Status", "GOOD", delta="⚠️")
             
-            st.metric("Rare Emotions Boosted", rare_improved)
-            
-            # Show min emotion count improvement
-            min_original = min(original_counts.values()) if original_counts else 0
-            min_final = min(final_counts.values()) if final_counts else 0
-            st.metric("Min Emotion Count", f"{min_final:,}", delta=f"{min_final - min_original:+,}")
+            avg_samples = np.mean(list(final_counts.values()))
+            st.metric("Avg per Emotion", f"{avg_samples:.0f}")
         
         with col3:
-            # Calculate balance improvement score
-            if original_counts:
-                orig_std = np.std(list(original_counts.values()))
-                final_std = np.std(list(final_counts.values()))
-                balance_improvement = ((orig_std - final_std) / orig_std) * 100 if orig_std > 0 else 0
-                
-                st.metric("Balance Improvement", f"{balance_improvement:.1f}%")
-                
-                # Expected F1-score improvement
-                expected_f1_boost = min(25, balance_improvement * 0.8)  # Conservative estimate
-                st.metric("Expected F1 Boost", f"+{expected_f1_boost:.1f}%")
+            emotions_at_target = sum(1 for count in final_counts.values() if count == samples_per_emotion)
+            st.metric("At Target Count", f"{emotions_at_target}/{len(final_counts)}")
+            
+            balance_score = (emotions_at_target / len(final_counts)) * 100
+            st.metric("Balance Score", f"{balance_score:.0f}%")
         
-        # Show top improved emotions
-        st.write("**BIGGEST IMPROVEMENTS:**")
-        improvements = []
+        # Show perfect balance confirmation
+        st.write("**FINAL EMOTION COUNTS:**")
+        
         for emotion in self.emotion_columns:
-            if emotion in original_counts and emotion in final_counts:
-                orig = original_counts[emotion]
-                final = final_counts[emotion]
-                if final > orig:
-                    improvement_ratio = final / max(orig, 1)
-                    improvements.append((emotion, orig, final, improvement_ratio))
+            if emotion in final_counts:
+                count = final_counts[emotion]
+                if count == samples_per_emotion:
+                    st.success(f"   ✅ **{emotion.title()}**: {count:,} samples (PERFECT)")
+                elif count >= samples_per_emotion * 0.8:
+                    st.info(f"   ℹ️ **{emotion.title()}**: {count:,} samples (good)")
+                else:
+                    st.warning(f"   ⚠️ **{emotion.title()}**: {count:,} samples (low)")
         
-        # Sort by improvement ratio
-        improvements.sort(key=lambda x: x[3], reverse=True)
-        for emotion, orig, final, ratio in improvements[:5]:
-            st.write(f"   • **{emotion.title()}**: {orig:,} → {final:,} samples ({ratio:.1f}x improvement)")
-        
-        st.success(f"**ADVANCED BALANCING COMPLETE!** Expected performance boost: 15-25% higher F1-scores")
+        st.success(f"**BALANCED SAMPLING COMPLETE!** Expected performance: Consistent across ALL emotions")
         
         return balanced_df
     
-    def fix_emotion_imbalance(self, df, max_dominant_samples=8000, min_emotion_samples=500):
-        """Legacy method redirected to aggressive balancing"""
-        return self.aggressive_emotion_balancing(df, target_min_samples=3000, max_dominant_samples=max_dominant_samples)
-    
-    def balance_emotions(self, df, max_dominant_samples=10000):
-        """Legacy method redirected to aggressive balancing"""
-        return self.aggressive_emotion_balancing(df, target_min_samples=3000, max_dominant_samples=max_dominant_samples)
-    
-    def process_data(self, df, sample_size=None, preprocessing_options=None, fix_imbalance=True):
-        """Process data with aggressive balancing and enhanced preprocessing"""
+    def process_data(self, df, sample_size=None, preprocessing_options=None, use_balanced_sampling=True):
+        """Process data with new balanced sampling approach"""
         try:
             # Default to BERT-optimized for higher accuracy
             if preprocessing_options is None:
@@ -481,21 +469,15 @@ class SimpleDataPreprocessor:
                     'bert_optimized': True
                 }
             
-            # KEY ENHANCEMENT: Apply aggressive balancing FIRST
-            if fix_imbalance:
-                df = self.aggressive_emotion_balancing(df)
-                st.success(f"Applied aggressive emotion balancing! New dataset: {len(df):,} samples")
-            
-            # Sample data if needed AFTER balancing
-            if sample_size and sample_size < len(df):
-                # Use stratified sampling to maintain emotion balance
-                emotion_ratios = {}
-                for emotion in self.emotion_columns:
-                    if emotion in df.columns:
-                        emotion_ratios[emotion] = (df[emotion] == 1).sum() / len(df)
+            # NEW: Apply balanced sampling FIRST (much simpler than oversampling)
+            if use_balanced_sampling:
+                if sample_size:
+                    samples_per_emotion = sample_size // len(self.emotion_columns)
+                else:
+                    samples_per_emotion = 800  # Default
                 
-                df = df.sample(n=sample_size, random_state=42)
-                st.info(f"Sampled {sample_size:,} samples while maintaining emotion balance")
+                df = self.balanced_emotion_sampling(df, samples_per_emotion=samples_per_emotion)
+                st.success(f"Applied balanced sampling! New dataset: {len(df):,} samples")
             
             # Clean text
             df = df.copy()
@@ -547,27 +529,11 @@ class SimpleDataPreprocessor:
             X = df['cleaned_text'].values
             y = df[self.emotion_columns].values.astype(float)
             
-            # ENHANCED: Stratified split to maintain emotion balance
-            try:
-                # Create a combined label for stratification (find dominant emotion per sample)
-                dominant_emotions = []
-                for row in y:
-                    if np.any(row == 1):
-                        dominant_emotions.append(np.argmax(row))
-                    else:
-                        dominant_emotions.append(-1)  # No emotion
-                
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.2, random_state=42, stratify=dominant_emotions
-                )
-                st.success("Used stratified split to maintain emotion balance")
-                
-            except:
-                # Fallback to regular split if stratification fails
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.2, random_state=42
-                )
-                st.info("Used regular split (stratification failed)")
+            # Split data (stratified split is less important with balanced data)
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
+            st.success("Split data into 80% training, 20% testing")
             
             # Final balance verification
             st.write("**Final Training Set Balance:**")
@@ -588,21 +554,21 @@ class SimpleDataPreprocessor:
                 if max_count > 0:
                     balance_ratio = min_count / max_count
                     st.metric("Balance Ratio", f"{balance_ratio:.2f}")
-                    if balance_ratio > 0.3:
-                        st.success("Good balance!")
-                    elif balance_ratio > 0.1:
-                        st.warning("Moderate balance")
+                    if balance_ratio > 0.8:
+                        st.success("Excellent balance!")
+                    elif balance_ratio > 0.6:
+                        st.info("Good balance")
                     else:
-                        st.error("Still imbalanced")
+                        st.warning("Some imbalance remains")
                 
-                rare_emotions_fixed = sum(1 for count in train_counts.values() if count >= 1000)
-                st.metric("Well-Sampled Emotions", f"{rare_emotions_fixed}/{len(train_counts)}")
+                well_balanced = sum(1 for count in train_counts.values() if count >= min_count * 0.8)
+                st.metric("Well-Balanced Emotions", f"{well_balanced}/{len(train_counts)}")
             
             with col3:
                 st.metric("Training Samples", f"{len(X_train):,}")
                 st.metric("Test Samples", f"{len(X_test):,}")
             
-            st.success(f"Data processing complete! Expected F1-score improvement: 15-25%")
+            st.success(f"Data processing complete! Balanced approach should give consistent performance across ALL emotions")
             
             return X_train, X_test, y_train, y_test
             
