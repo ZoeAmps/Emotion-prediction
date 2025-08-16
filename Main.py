@@ -690,7 +690,7 @@ with tab7:
         
     with col2:
         st.write("### 📊 Performance Metrics")
-        if 'results' in st.session_state:
+        if 'results' in st.session_state and st.session_state.results is not None:
             for model_name, metrics in st.session_state.results.items():
                 accuracy = metrics.get('hamming_accuracy', 0) * 100
                 f1 = metrics.get('macro_f1', 0) * 100
