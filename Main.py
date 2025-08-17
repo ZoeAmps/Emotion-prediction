@@ -27,10 +27,6 @@ EMOTION_LABELS = [
 # Team info
 TEAM_NAMES = [
     "Zoe Akua Ohene-Ampofo, 22252412",
-    "Yvette S. Nerquaye-Tetteh, 22253082", 
-    "Theophilus Arthur, 11410587",
-    "Suleman Abdul-Razark, 22256374",
-    "Steve Afrifa-Yamoah, 22252462",
 ]
 
 # Page config
